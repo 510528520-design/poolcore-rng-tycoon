@@ -364,29 +364,25 @@
             // 更新所有格子
             for (let i = 0; i < slots.length; i++) {
                 const slotEl = document.getElementById(`s${i+1}`);
-                const item = slots[i];
-                if (item) {
-                    slotEl.className = "slot occupied";
-                    slotEl.innerHTML = `
-                        <div class="emoji" style="color:${item.color}">${item.emoji}</div>
-                        <div class="name" style="color:${item.color}">${item.name}</div>
-                        <div class="rate">+${item.income}/s</div>
-                    `;
+                if (slots[i]) { 
+                    slotEl.innerHTML = `<b>${slots[i].name}</b><br><small>+${slots[i].income}/s</small>`; 
+                    slotEl.style.backgroundColor = slots[i].color + "44"; 
+                    slotEl.classList.add('occupied');
                     slotEl.onclick = () => sellItem(i);
                 } else {
                     slotEl.className = "slot";
                     slotEl.textContent = "空位";
+                    slotEl.style.backgroundColor = "#ffffff";
                     slotEl.onclick = null;
                 }
             }
         }
 
         // 添加日志
-        function addLog(text) {
-            const entry = document.createElement('div');
-            entry.className = 'log-entry';
-            entry.textContent = `[${new Date().toLocaleTimeString()}] ${text}`;
-            logEl.prepend(entry);
+        function addLog(msg) { 
+            const div = document.createElement('div'); 
+            div.innerText = `> ${msg}`; 
+            logEl.prepend(div);
             // 保持最多20条日志
             if (logEl.children.length > 20) {
                 logEl.removeChild(logEl.lastChild);
