@@ -179,12 +179,6 @@
             border-bottom: 1px solid rgba(255,255,255,0.1);
         }
 
-        .item-common { color: #2ecc71; }
-        .item-rare { color: #3498db; }
-        .item-epic { color: #9b59b6; }
-        .item-legendary { color: #f39c12; }
-        .item-mythic { color: var(--mythic-red); }
-
         /* 移动端适配 */
         @media (max-width: 600px) {
             #pool-grid {
@@ -236,131 +230,114 @@
     </div>
 
     <div id="controls">
-        <div id="roll-result"></div>
-        <button id="roll-btn">🎣 抽取泳池装备</button>
-
+        <div id="roll-result">准备好开始了吗？</div>
+        <button id="roll-btn">ROLL!</button>
         <div id="shop">
-            <button class="upgrade-btn" id="luck-btn" onclick="buyLuck()">升级幸运 (价格: 100)</button>
-            <button class="upgrade-btn" id="slot-btn" onclick="buySlot()">解锁新格子 (价格: 500)</button>
-            <button class="upgrade-btn" id="auto-btn" onclick="buyAuto()">自动抽取 (价格: 1000)</button>
+            <button class="upgrade-btn" onclick="buyLuck()">升级幸运 (Cost: <span id="luck-cost">50</span>)</button>
         </div>
     </div>
 
     <div class="log" id="log">
-        <div class="log-entry">系统已启动，泳池经营开始！</div>
+        <div class="log-entry">游戏开始... 寻找稀有物品以增加收益。</div>
     </div>
 
     <script>
-        // 游戏配置
+        // 1. 数据配置
         let cash = 0;
         let luck = 1.0;
-        let mps = 0;
+        let luckCost = 50;
         let slots = [null, null, null, null, null, null];
-        let maxSlots = 6;
-        let luckCost = 100;
-        let slotCost = 500;
-        let autoCost = 1000;
-        let autoEnabled = false;
-        let autoTimer = null;
 
-        // 装备池
+        // 稀有度权重表 (越小越稀有)
         const items = [
-            { name: "普通泳圈", rate: 1, income: 1, emoji: "🛟", rarity: "common", chance: 1 },
-            { name: "浮板", rate: 2, income: 3, emoji: "🏄", rarity: "common", chance: 2 },
-            { name: "潜水镜", rate: 3, income: 5, emoji: "🥽", rarity: "common", chance: 3 },
-            { name: "水枪", rate: 4, income: 10, emoji: "🔫", rarity: "rare", chance: 5 },
-            { name: "游泳圈", rate: 5, income: 20, emoji: "💦", rarity: "rare", chance: 10 },
-            { name: "冲浪板", rate: 6, income: 50, emoji: "🏂", rarity: "epic", chance: 20 },
-            { name: "潜水艇", rate: 7, income: 100, emoji: "🚤", rarity: "epic", chance: 50 },
-            { name: "黄金游艇", rate: 8, income: 500, emoji: "🛥️", rarity: "legendary", chance: 200 },
-            { name: "海洋之心", rate: 9, income: 2000, emoji: "💎", rarity: "legendary", chance: 500 },
-            { name: "波塞冬三叉戟", rate: 10, income: 10000, emoji: "🔱", rarity: "mythic", chance: 2000 }
+            { name: "塑料小黄鸭", weight: 1000, income: 1, color: "#ccc", emoji: "🦆" },
+            { name: "蓝色瓷砖", weight: 200, income: 5, color: "#4fc3f7", emoji: "🟦" },
+            { name: "水下射灯", weight: 50, income: 20, color: "#fff176", emoji: "💡" },
+            { name: "极简扶手", weight: 10, income: 100, color: "#9575cd", emoji: "🪜" },
+            { name: "回声走廊", weight: 1, income: 1000, color: "#ff4757", emoji: "🌊" },
+            { name: "【神话】无限池水", weight: 0.1, income: 10000, color: "#ff9f43", emoji: "✨" }
         ];
 
-        // 每秒收益
-        setInterval(() => {
-            const totalIncome = slots.filter(Boolean).reduce((sum, item) => sum + item.income, 0);
-            cash += totalIncome;
-            mps = totalIncome;
-            updateUI();
-        }, 1000);
+        const cashEl = document.getElementById('cash');
+        const luckEl = document.getElementById('luck');
+        const mpsEl = document.getElementById('mps');
+        const rollResultEl = document.getElementById('roll-result');
+        const logEl = document.getElementById('log');
+        const luckCostEl = document.getElementById('luck-cost');
 
-        // 自动抽取
-        function startAuto() {
-            if (autoTimer) clearInterval(autoTimer);
-            if (autoEnabled) {
-                autoTimer = setInterval(() => roll(), 2000);
-            }
-        }
-
-        // 抽取装备
-        function roll() {
-            const rollResult = document.getElementById('roll-result');
-            const rollBtn = document.getElementById('roll-btn');
-
-            // 检查是否有空位
-            const emptySlotIndex = slots.findIndex(s => s === null);
-            if (emptySlotIndex === -1) {
-                rollResult.textContent = "⚠️ 泳池格子已满，先卖掉旧装备吧！";
-                rollResult.style.color = "#e74c3c";
-                setTimeout(() => rollResult.textContent = "", 2000);
-                return;
-            }
-
-            // RNG 计算
-            const rollVal = Math.random() / luck;
-            let result = items[0];
-
-            // 倒序找最稀有
+        // 2. 核心逻辑：加权随机
+        function rollItem() {
+            // 简单算法：越稀有的东西，受Luck提升越明显
             for (let i = items.length - 1; i >= 0; i--) {
-                if (rollVal <= (1 / items[i].chance)) {
-                    result = items[i];
-                    break;
+                let chance = 1 / items[i].weight;
+                if (Math.random() < (chance * luck)) {
+                    return items[i];
                 }
             }
+            return items[0]; // 保底
+        }
 
-            // 放到空位
-            slots[emptySlotIndex] = result;
-
-            // 视觉反馈
+        // 3. 动作：Roll
+        document.getElementById('roll-btn').onclick = () => {
+            const result = rollItem();
+            rollResultEl.innerText = `获得：${result.name}!`;
+            rollResultEl.style.color = result.color;
+            
+            // 按钮动效
+            const rollBtn = document.getElementById('roll-btn');
             rollBtn.style.transform = "scale(0.95)";
             setTimeout(() => rollBtn.style.transform = "scale(1)", 100);
 
-            // 显示结果
-            rollResult.textContent = `抽到了！${result.emoji} ${result.name} (${result.rarity})`;
-            rollResult.style.color = getRarityColor(result.rarity);
-            setTimeout(() => rollResult.textContent = "", 2000);
+            addLog(`抽到了 ${result.name} (1/${Math.round(1/ (1/result.weight))})`);
+            
+            // 自动放入空位（如果有的话，且收益更高）
+            placeInSlot(result);
+        };
 
-            // 记录日志
-            addLog(`抽到 ${result.emoji} ${result.name}，每秒 +${result.income} 水能`);
+        function placeInSlot(newItem) {
+            // 先找空位
+            let targetIndex = slots.findIndex(s => s === null);
+            
+            // 没有空位的话，找收益最低的替换
+            if (targetIndex === -1) {
+                let minIncome = Infinity;
+                slots.forEach((item, index) => {
+                    if (item && item.income < minIncome && item.income < newItem.income) {
+                        minIncome = item.income;
+                        targetIndex = index;
+                    }
+                });
+            }
 
-            // 更新界面
-            renderSlots();
+            if (targetIndex !== -1) {
+                slots[targetIndex] = newItem;
+                updateUI();
+            } else {
+                addLog("所有格子都满了，而且都是更高收益的物品~");
+            }
+        }
+
+        // 4. 升级逻辑
+        function buyLuck() {
+            if (cash >= luckCost) {
+                cash -= luckCost;
+                luck += 0.5;
+                luckCost = Math.floor(luckCost * 1.8);
+                updateUI();
+                addLog("升级成功！现在的运气更好了。");
+            } else {
+                addLog("水能不足！");
+            }
+        }
+
+        // 5. 循环：收益计算
+        setInterval(() => {
+            let totalIncome = slots.reduce((sum, item) => sum + (item ? item.income : 0), 0);
+            cash += totalIncome;
             updateUI();
-        }
+        }, 1000);
 
-        // 渲染泳池格子
-        function renderSlots() {
-            slots.forEach((item, index) => {
-                const slotEl = document.getElementById(`s${index+1}`);
-                if (item) {
-                    slotEl.className = "slot occupied";
-                    slotEl.innerHTML = `
-                        <div class="emoji">${item.emoji}</div>
-                        <div class="name">${item.name}</div>
-                        <div class="rate">+${item.income}/s</div>
-                    `;
-                    // 点击出售
-                    slotEl.onclick = () => sellItem(index);
-                } else {
-                    slotEl.className = "slot";
-                    slotEl.textContent = "空位";
-                    slotEl.onclick = null;
-                }
-            });
-        }
-
-        // 出售物品
+        // 点击格子出售
         function sellItem(index) {
             const item = slots[index];
             if (!item) return;
@@ -368,78 +345,44 @@
             const sellPrice = item.income * 5;
             cash += sellPrice;
             slots[index] = null;
-
-            addLog(`卖掉 ${item.emoji} ${item.name}，获得 ¥${sellPrice}`);
-
-            renderSlots();
+            addLog(`卖掉 ${item.name}，获得 ¥${sellPrice}`);
             updateUI();
         }
 
-        // 升级幸运
-        function buyLuck() {
-            if (cash >= luckCost) {
-                cash -= luckCost;
-                luck += 0.5;
-                luckCost = Math.floor(luckCost * 1.5);
-                addLog(`升级成功！幸运倍率 x${luck.toFixed(1)}`);
-                updateUI();
-            }
-        }
+        function updateUI() {
+            cashEl.innerText = Math.floor(cash);
+            luckEl.innerText = `x${luck.toFixed(1)}`;
+            luckCostEl.innerText = luckCost;
+            
+            // 计算每秒收益
+            let totalIncome = slots.reduce((sum, item) => sum + (item ? item.income : 0), 0);
+            mpsEl.innerText = totalIncome;
 
-        // 解锁格子
-        function buySlot() {
-            if (maxSlots >= 9) return;
-            if (cash >= slotCost) {
-                cash -= slotCost;
-                maxSlots += 1;
-                slots.push(null);
-                slotCost = Math.floor(slotCost * 2);
-
-                // 新增格子DOM
-                if (maxSlots === 7 || maxSlots === 8 || maxSlots ===9) {
-                    const newSlot = document.createElement('div');
-                    newSlot.className = 'slot';
-                    newSlot.id = `s${maxSlots}`;
-                    newSlot.textContent = '空位';
-                    document.getElementById('pool-grid').appendChild(newSlot);
-
-                    // 调整网格
-                    if (maxSlots > 6) {
-                        document.getElementById('pool-grid').style.gridTemplateColumns = 'repeat(3, 120px)';
-                    }
+            // 升级按钮状态
+            document.querySelector('.upgrade-btn').disabled = cash < luckCost;
+            
+            // 更新所有格子
+            for (let i = 0; i < slots.length; i++) {
+                const slotEl = document.getElementById(`s${i+1}`);
+                const item = slots[i];
+                if (item) {
+                    slotEl.className = "slot occupied";
+                    slotEl.innerHTML = `
+                        <div class="emoji" style="color:${item.color}">${item.emoji}</div>
+                        <div class="name" style="color:${item.color}">${item.name}</div>
+                        <div class="rate">+${item.income}/s</div>
+                    `;
+                    slotEl.onclick = () => sellItem(i);
+                } else {
+                    slotEl.className = "slot";
+                    slotEl.textContent = "空位";
+                    slotEl.onclick = null;
                 }
-
-                addLog(`解锁新格子！当前最大格子数：${maxSlots}`);
-                updateUI();
             }
-        }
-
-        // 购买自动抽取
-        function buyAuto() {
-            if (cash >= autoCost && !autoEnabled) {
-                cash -= autoCost;
-                autoEnabled = true;
-                startAuto();
-                addLog(`开启自动抽取功能！`);
-                updateUI();
-            }
-        }
-
-        // 获取稀有度颜色
-        function getRarityColor(rarity) {
-            const colors = {
-                common: "#2ecc71",
-                rare: "#3498db",
-                epic: "#9b59b6",
-                legendary: "#f39c12",
-                mythic: "#ff4757"
-            };
-            return colors[rarity] || "#2c3e50";
         }
 
         // 添加日志
         function addLog(text) {
-            const logEl = document.getElementById('log');
             const entry = document.createElement('div');
             entry.className = 'log-entry';
             entry.textContent = `[${new Date().toLocaleTimeString()}] ${text}`;
@@ -450,30 +393,9 @@
             }
         }
 
-        // 更新UI
-        function updateUI() {
-            document.getElementById('cash').textContent = Math.floor(cash);
-            document.getElementById('luck').textContent = `x${luck.toFixed(1)}`;
-            document.getElementById('mps').textContent = mps;
-
-            // 更新商店按钮
-            document.getElementById('luck-btn').textContent = `升级幸运 (价格: ${luckCost})`;
-            document.getElementById('luck-btn').disabled = cash < luckCost;
-            
-            document.getElementById('slot-btn').textContent = maxSlots >=9 ? "已解锁所有格子" : `解锁新格子 (价格: ${slotCost})`;
-            document.getElementById('slot-btn').disabled = cash < slotCost || maxSlots >=9;
-            
-            document.getElementById('auto-btn').textContent = autoEnabled ? "已开启自动抽取" : `自动抽取 (价格: ${autoCost})`;
-            document.getElementById('auto-btn').disabled = cash < autoCost || autoEnabled;
-        }
-
-        // 绑定抽取按钮
-        document.getElementById('roll-btn').addEventListener('click', roll);
-
         // 初始化
-        renderSlots();
         updateUI();
-        addLog("欢迎来到泳池经营大亨！点击抽取按钮开始游戏~");
+        addLog("欢迎来到Poolcore泳池大亨！点击ROLL开始游戏~");
     </script>
 </body>
 </html>
