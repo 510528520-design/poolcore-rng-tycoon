@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Poolcore RNG Tycoon Prototype</title>
+    <style>
+        :root {
+            --pool-blue: #0093E9;
+            --pool-light: #80D0C7;
+            --tile-white: #ffffff;
+            --mythic-red: #ff4757;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #e0f7fa 0%, #80d8ff 100%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            color: #2c3e50;
+            overflow-x: hidden;
+            padding-bottom: 80px;
+        }
+
+        /* 顶部状态栏 */
+        #header {
+            width: 100%;
+            background: rgba(255, 255, 255, 0.3);
+            backdrop-filter: blur(10px);
+            padding: 20px;
+            display: flex;
+            justify-content: space-around;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            font-weight: bold;
+            font-size: 1.2rem;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+
+        /* 核心展示区：泳池空间 */
+        #pool-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 120px);
+            grid-gap: 15px;
+            margin: 40px 20px;
+            padding: 20px;
+            background: rgba(255,255,255,0.5);
+            border: 4px solid white;
+            border-radius: 10px;
+        }
+
+        .slot {
+            width: 120px;
+            height: 120px;
+            background: #ffffff;
+            border: 2px dashed #b2ebf2;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.8rem;
+            text-align: center;
+            transition: all 0.3s;
+        }
+
+        .slot.occupied {
+            border: 2px solid var(--pool-blue);
+            box-shadow: 0 4px 10px rgba(0,147,233,0.2);
+        }
+
+        .slot .emoji {
+            font-size: 2.5rem;
+            margin-bottom: 5px;
+        }
+
+        .slot .name {
+            font-weight: bold;
+        }
+
+        .slot .rate {
+            font-size: 0.7rem;
+            color: var(--pool-blue);
+        }
+
+        /* 控制区 */
+        #controls {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 15px;
+        }
+
+        #roll-btn {
+            padding: 20px 60px;
+            font-size: 1.5rem;
+            background-color: var(--pool-blue);
+            color: white;
+            border: none;
+            border-radius: 50px;
+            cursor: pointer;
+            box-shadow: 0 10px 20px rgba(0,147,233,0.3);
+            transition: transform 0.1s, background 0.3s;
+        }
+
+        #roll-btn:hover {
+            background-color: #007bbd;
+        }
+
+        #roll-btn:active {
+            transform: scale(0.95);
+        }
+
+        #roll-result {
+            margin-top: 10px;
+            height: 30px;
+            font-weight: bold;
+            font-size: 1.2rem;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.1);
+        }
+
+        /* 商店区 */
+        #shop {
+            margin-top: 30px;
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .upgrade-btn {
+            background: white;
+            border: 2px solid var(--pool-blue);
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-weight: 500;
+        }
+
+        .upgrade-btn:hover {
+            background: var(--pool-blue);
+            color: white;
+        }
+
+        .upgrade-btn:disabled {
+            background: #ccc;
+            border-color: #ccc;
+            cursor: not-allowed;
+            color: #999;
+        }
+
+        /* 动画与反馈 */
+        .log {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 250px;
+            max-height: 200px;
+            overflow-y: auto;
+            background: rgba(0,0,0,0.6);
+            color: white;
+            padding: 10px;
+            font-size: 0.7rem;
+            border-radius: 5px;
+            z-index: 100;
+        }
+
+        .log-entry {
+            margin-bottom: 4px;
+            padding-bottom: 4px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .item-common { color: #2ecc71; }
+        .item-rare { color: #3498db; }
+        .item-epic { color: #9b59b6; }
+        .item-legendary { color: #f39c12; }
+        .item-mythic { color: var(--mythic-red); }
+
+        /* 移动端适配 */
+        @media (max-width: 600px) {
+            #pool-grid {
+                grid-template-columns: repeat(3, 100px);
+                grid-gap: 10px;
+                padding: 15px;
+            }
+
+            .slot {
+                width: 100px;
+                height: 100px;
+                font-size: 0.7rem;
+            }
+
+            .slot .emoji {
+                font-size: 2rem;
+            }
+
+            #header {
+                font-size: 1rem;
+                padding: 15px;
+            }
+
+            #roll-btn {
+                padding: 15px 40px;
+                font-size: 1.2rem;
+            }
+
+            .log {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="header">
+        <div>水能 (Cash): <span id="cash">0</span></div>
+        <div>幸运倍率: <span id="luck">x1.0</span></div>
+        <div>每秒收益: <span id="mps">0</span>/s</div>
+    </div>
+
+    <div id="pool-grid">
+        <div class="slot" id="s1">空位</div>
+        <div class="slot" id="s2">空位</div>
+        <div class="slot" id="s3">空位</div>
+        <div class="slot" id="s4">空位</div>
+        <div class="slot" id="s5">空位</div>
+        <div class="slot" id="s6">空位</div>
+    </div>
+
+    <div id="controls">
+        <div id="roll-result"></div>
+        <button id="roll-btn">🎣 抽取泳池装备</button>
+
+        <div id="shop">
+            <button class="upgrade-btn" id="luck-btn" onclick="buyLuck()">升级幸运 (价格: 100)</button>
+            <button class="upgrade-btn" id="slot-btn" onclick="buySlot()">解锁新格子 (价格: 500)</button>
+            <button class="upgrade-btn" id="auto-btn" onclick="buyAuto()">自动抽取 (价格: 1000)</button>
+        </div>
+    </div>
+
+    <div class="log" id="log">
+        <div class="log-entry">系统已启动，泳池经营开始！</div>
+    </div>
+
+    <script>
+        // 游戏配置
+        let cash = 0;
+        let luck = 1.0;
+        let mps = 0;
+        let slots = [null, null, null, null, null, null];
+        let maxSlots = 6;
+        let luckCost = 100;
+        let slotCost = 500;
+        let autoCost = 1000;
+        let autoEnabled = false;
+        let autoTimer = null;
+
+        // 装备池
+        const items = [
+            { name: "普通泳圈", rate: 1, income: 1, emoji: "🛟", rarity: "common", chance: 1 },
+            { name: "浮板", rate: 2, income: 3, emoji: "🏄", rarity: "common", chance: 2 },
+            { name: "潜水镜", rate: 3, income: 5, emoji: "🥽", rarity: "common", chance: 3 },
+            { name: "水枪", rate: 4, income: 10, emoji: "🔫", rarity: "rare", chance: 5 },
+            { name: "游泳圈", rate: 5, income: 20, emoji: "💦", rarity: "rare", chance: 10 },
+            { name: "冲浪板", rate: 6, income: 50, emoji: "🏂", rarity: "epic", chance: 20 },
+            { name: "潜水艇", rate: 7, income: 100, emoji: "🚤", rarity: "epic", chance: 50 },
+            { name: "黄金游艇", rate: 8, income: 500, emoji: "🛥️", rarity: "legendary", chance: 200 },
+            { name: "海洋之心", rate: 9, income: 2000, emoji: "💎", rarity: "legendary", chance: 500 },
+            { name: "波塞冬三叉戟", rate: 10, income: 10000, emoji: "🔱", rarity: "mythic", chance: 2000 }
+        ];
+
+        // 每秒收益
+        setInterval(() => {
+            const totalIncome = slots.filter(Boolean).reduce((sum, item) => sum + item.income, 0);
+            cash += totalIncome;
+            mps = totalIncome;
+            updateUI();
+        }, 1000);
+
+        // 自动抽取
+        function startAuto() {
+            if (autoTimer) clearInterval(autoTimer);
+            if (autoEnabled) {
+                autoTimer = setInterval(() => roll(), 2000);
+            }
+        }
+
+        // 抽取装备
+        function roll() {
+            const rollResult = document.getElementById('roll-result');
+            const rollBtn = document.getElementById('roll-btn');
+
+            // 检查是否有空位
+            const emptySlotIndex = slots.findIndex(s => s === null);
+            if (emptySlotIndex === -1) {
+                rollResult.textContent = "⚠️ 泳池格子已满，先卖掉旧装备吧！";
+                rollResult.style.color = "#e74c3c";
+                setTimeout(() => rollResult.textContent = "", 2000);
+                return;
+            }
+
+            // RNG 计算
+            const rollVal = Math.random() / luck;
+            let result = items[0];
+
+            // 倒序找最稀有
+            for (let i = items.length - 1; i >= 0; i--) {
+                if (rollVal <= (1 / items[i].chance)) {
+                    result = items[i];
+                    break;
+                }
+            }
+
+            // 放到空位
+            slots[emptySlotIndex] = result;
+
+            // 视觉反馈
+            rollBtn.style.transform = "scale(0.95)";
+            setTimeout(() => rollBtn.style.transform = "scale(1)", 100);
+
+            // 显示结果
+            rollResult.textContent = `抽到了！${result.emoji} ${result.name} (${result.rarity})`;
+            rollResult.style.color = getRarityColor(result.rarity);
+            setTimeout(() => rollResult.textContent = "", 2000);
+
+            // 记录日志
+            addLog(`抽到 ${result.emoji} ${result.name}，每秒 +${result.income} 水能`);
+
+            // 更新界面
+            renderSlots();
+            updateUI();
+        }
+
+        // 渲染泳池格子
+        function renderSlots() {
+            slots.forEach((item, index) => {
+                const slotEl = document.getElementById(`s${index+1}`);
+                if (item) {
+                    slotEl.className = "slot occupied";
+                    slotEl.innerHTML = `
+                        <div class="emoji">${item.emoji}</div>
+                        <div class="name">${item.name}</div>
+                        <div class="rate">+${item.income}/s</div>
+                    `;
+                    // 点击出售
+                    slotEl.onclick = () => sellItem(index);
+                } else {
+                    slotEl.className = "slot";
+                    slotEl.textContent = "空位";
+                    slotEl.onclick = null;
+                }
+            });
+        }
+
+        // 出售物品
+        function sellItem(index) {
+            const item = slots[index];
+            if (!item) return;
+
+            const sellPrice = item.income * 5;
+            cash += sellPrice;
+            slots[index] = null;
+
+            addLog(`卖掉 ${item.emoji} ${item.name}，获得 ¥${sellPrice}`);
+
+            renderSlots();
+            updateUI();
+        }
+
+        // 升级幸运
+        function buyLuck() {
+            if (cash >= luckCost) {
+                cash -= luckCost;
+                luck += 0.5;
+                luckCost = Math.floor(luckCost * 1.5);
+                addLog(`升级成功！幸运倍率 x${luck.toFixed(1)}`);
+                updateUI();
+            }
+        }
+
+        // 解锁格子
+        function buySlot() {
+            if (maxSlots >= 9) return;
+            if (cash >= slotCost) {
+                cash -= slotCost;
+                maxSlots += 1;
+                slots.push(null);
+                slotCost = Math.floor(slotCost * 2);
+
+                // 新增格子DOM
+                if (maxSlots === 7 || maxSlots === 8 || maxSlots ===9) {
+                    const newSlot = document.createElement('div');
+                    newSlot.className = 'slot';
+                    newSlot.id = `s${maxSlots}`;
+                    newSlot.textContent = '空位';
+                    document.getElementById('pool-grid').appendChild(newSlot);
+
+                    // 调整网格
+                    if (maxSlots > 6) {
+                        document.getElementById('pool-grid').style.gridTemplateColumns = 'repeat(3, 120px)';
+                    }
+                }
+
+                addLog(`解锁新格子！当前最大格子数：${maxSlots}`);
+                updateUI();
+            }
+        }
+
+        // 购买自动抽取
+        function buyAuto() {
+            if (cash >= autoCost && !autoEnabled) {
+                cash -= autoCost;
+                autoEnabled = true;
+                startAuto();
+                addLog(`开启自动抽取功能！`);
+                updateUI();
+            }
+        }
+
+        // 获取稀有度颜色
+        function getRarityColor(rarity) {
+            const colors = {
+                common: "#2ecc71",
+                rare: "#3498db",
+                epic: "#9b59b6",
+                legendary: "#f39c12",
+                mythic: "#ff4757"
+            };
+            return colors[rarity] || "#2c3e50";
+        }
+
+        // 添加日志
+        function addLog(text) {
+            const logEl = document.getElementById('log');
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${text}`;
+            logEl.prepend(entry);
+            // 保持最多20条日志
+            if (logEl.children.length > 20) {
+                logEl.removeChild(logEl.lastChild);
+            }
+        }
+
+        // 更新UI
+        function updateUI() {
+            document.getElementById('cash').textContent = Math.floor(cash);
+            document.getElementById('luck').textContent = `x${luck.toFixed(1)}`;
+            document.getElementById('mps').textContent = mps;
+
+            // 更新商店按钮
+            document.getElementById('luck-btn').textContent = `升级幸运 (价格: ${luckCost})`;
+            document.getElementById('luck-btn').disabled = cash < luckCost;
+            
+            document.getElementById('slot-btn').textContent = maxSlots >=9 ? "已解锁所有格子" : `解锁新格子 (价格: ${slotCost})`;
+            document.getElementById('slot-btn').disabled = cash < slotCost || maxSlots >=9;
+            
+            document.getElementById('auto-btn').textContent = autoEnabled ? "已开启自动抽取" : `自动抽取 (价格: ${autoCost})`;
+            document.getElementById('auto-btn').disabled = cash < autoCost || autoEnabled;
+        }
+
+        // 绑定抽取按钮
+        document.getElementById('roll-btn').addEventListener('click', roll);
+
+        // 初始化
+        renderSlots();
+        updateUI();
+        addLog("欢迎来到泳池经营大亨！点击抽取按钮开始游戏~");
+    </script>
+</body>
+</html>
